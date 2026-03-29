@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Odds Tester — Live Cricket Odds Monitor</title>
+  <meta name="description"
+    content="Test live Odds API polling for cricket matches with real-time Betfair Exchange odds display." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+    rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg: '#0f0f13',
+            card: '#1a1a24',
+            border: '#2a2a38',
+            accent: '#6c63ff',
+            live: '#22c55e',
+            warn: '#f59e0b',
+            danger: '#ef4444',
+            paused: '#94a3b8',
+            textPri: '#f1f5f9',
+            textMut: '#94a3b8',
+          },
+          fontFamily: { inter: ['Inter', 'sans-serif'] },
+          borderRadius: { '2xl': '1rem', '3xl': '1.5rem' },
+          boxShadow: {
+            card: '0 4px 24px rgba(0,0,0,0.4)',
+            glow: '0 0 16px rgba(108,99,255,0.35)',
+          },
+          transitionDuration: { DEFAULT: '300ms' },
+        }
+      }
+    }
+  </script>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: #0f0f13;
+      font-family: 'Inter', sans-serif;
+      color: #f1f5f9;
+      min-height: 100vh;
+    }
+
+    /* ────────── Live pulse dot ────────── */
+    @keyframes pulse-dot {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: 0.4;
+        transform: scale(1.5);
+      }
+    }
+
+    .live-dot {
+      animation: pulse-dot 1.2s ease-in-out infinite;
+    }
+
+    /* ────────── Live badge ring ────────── */
+    @keyframes ring-pulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
+      }
+
+      70% {
+        box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+      }
+
+      100% {
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+      }
+    }
+
+    .badge-live {
+      animation: ring-pulse 1.4s ease-out infinite;
+    }
+
+    /* ────────── Value flash highlight ────────── */
+    @keyframes flash-highlight {
+      0% {
+        background-color: rgba(250, 204, 21, 0.35);
+      }
+
+      100% {
+        background-color: transparent;
+      }
+    }
+
+    .flash {
+      animation: flash-highlight 400ms ease-out forwards;
+      border-radius: 4px;
+    }
+
+    /* ────────── Spinning loader ────────── */
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .spin {
+      animation: spin 0.75s linear infinite;
+    }
+
+    /* ────────── Slide-in toast ────────── */
+    @keyframes slide-up {
+      from {
+        opacity: 0;
+        transform: translateY(16px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .toast-enter {
+      animation: slide-up 250ms ease forwards;
+    }
+
+    /* ────────── Smooth fade ────────── */
+    .fade-in {
+      animation: slide-up 300ms ease forwards;
+    }
+
+    /* ────────── Scrollbar styling ────────── */
+    ::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: #1a1a24;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #2a2a38;
+      border-radius: 2px;
+    }
+
+    /* ────────── Input styling override ────────── */
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus {
+      -webkit-text-fill-color: #f1f5f9;
+      -webkit-box-shadow: 0 0 0px 1000px #1a1a24 inset;
+      transition: background-color 5000s ease-in-out 0s;
+    }
+
+    /* Polling dot bounce */
+    @keyframes bounce-dot {
+
+      0%,
+      80%,
+      100% {
+        transform: scale(0);
+      }
+
+      40% {
+        transform: scale(1);
+      }
+    }
+
+    .poll-dot {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #6c63ff;
+      animation: bounce-dot 1.2s infinite ease-in-out both;
+    }
+
+    .poll-dot:nth-child(1) {
+      animation-delay: -0.32s;
+    }
+
+    .poll-dot:nth-child(2) {
+      animation-delay: -0.16s;
+    }
+  </style>
+</head>
+
+<body class="flex items-start justify-center py-8 px-4">
+
+  <!-- ═══════════════════════════ WRAPPER ═══════════════════════════ -->
+  <div class="w-full" style="max-width:480px;">
+
+    <!-- ─────────────── HEADER ─────────────── -->
+    <header class="flex items-center gap-3 mb-6 px-1">
+      <div class="flex items-center justify-center w-10 h-10 rounded-xl"
+        style="background:linear-gradient(135deg,#6c63ff,#a78bfa);">
+        <!-- Cricket bat + ball icon (inline SVG) -->
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="18" cy="6" r="2.5" fill="white" stroke="none" />
+          <line x1="4" y1="20" x2="14" y2="10" />
+          <line x1="9" y1="20" x2="16" y2="13" />
+          <line x1="4" y1="15" x2="9" y2="20" />
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-xl font-bold tracking-tight" style="color:#f1f5f9;">
+          Odds Tester
+        </h1>
+        <p class="text-xs font-medium" style="color:#94a3b8;">Live Cricket API Monitor</p>
+      </div>
+      <!-- Live indicator pill (top right) -->
+      <div id="header-live-pill"
+        class="ml-auto hidden items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
+        style="background:rgba(34,197,94,0.12); color:#22c55e; border:1px solid rgba(34,197,94,0.25);">
+        <span class="live-dot w-2 h-2 rounded-full inline-block" style="background:#22c55e;"></span>
+        LIVE
+      </div>
+    </header>
+
+    <!-- ─────────────── INPUT CARD ─────────────── -->
+    <section id="input-card" class="fade-in rounded-2xl p-5 mb-4"
+      style="background:#1a1a24; border:1px solid #2a2a38; box-shadow:0 4px 24px rgba(0,0,0,0.4);">
+      <h2 class="text-sm font-semibold mb-4" style="color:#94a3b8; letter-spacing:0.08em; text-transform:uppercase;">
+        API Configuration
+      </h2>
+
+      <!-- Event ID -->
+      <div class="mb-3">
+        <label for="event-id" class="block text-xs font-medium mb-1.5" style="color:#94a3b8;">Event ID</label>
+        <input id="event-id" type="text" placeholder="e.g. 12345678"
+          class="w-full px-3.5 py-2.5 rounded-xl text-sm font-medium outline-none transition-all duration-300"
+          style="background:#0f0f13; border:1px solid #2a2a38; color:#f1f5f9; placeholder-color:#94a3b8;"
+          onfocus="this.style.borderColor='#6c63ff'; this.style.boxShadow='0 0 0 3px rgba(108,99,255,0.15)'"
+          onblur="this.style.borderColor='#2a2a38'; this.style.boxShadow='none'" />
+      </div>
+
+      <!-- API Key -->
+      <div class="mb-4">
+        <label for="api-key" class="block text-xs font-medium mb-1.5" style="color:#94a3b8;">API Key</label>
+        <div class="relative">
+          <input id="api-key" type="password" placeholder="Your Odds API key"
+            class="w-full px-3.5 py-2.5 pr-11 rounded-xl text-sm font-medium outline-none transition-all duration-300"
+            style="background:#0f0f13; border:1px solid #2a2a38; color:#f1f5f9;"
+            onfocus="this.style.borderColor='#6c63ff'; this.style.boxShadow='0 0 0 3px rgba(108,99,255,0.15)'"
+            onblur="this.style.borderColor='#2a2a38'; this.style.boxShadow='none'" />
+          <button id="toggle-key" type="button" title="Toggle visibility"
+            class="absolute right-3 top-1/2 -translate-y-1/2 transition-colors duration-200" style="color:#94a3b8;"
+            onmouseenter="this.style.color='#f1f5f9'" onmouseleave="this.style.color='#94a3b8'">
+            <!-- Eye icon -->
+            <svg id="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+              <circle cx="12" cy="12" r="3" />
+            </svg>
+            <svg id="eye-off-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden">
+              <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+              <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+              <line x1="1" y1="1" x2="23" y2="23" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Inline API Error -->
+      <div id="api-error" class="hidden mb-3 px-3.5 py-2.5 rounded-xl text-xs font-medium"
+        style="background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.25); color:#ef4444;">
+      </div>
+
+      <!-- Start Polling Button -->
+      <button id="start-btn" type="button"
+        class="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all duration-300 active:scale-95"
+        style="background:linear-gradient(135deg,#6c63ff,#818cf8); color:white; box-shadow:0 4px 16px rgba(108,99,255,0.35);"
+        onmouseenter="if(!this.disabled){this.style.boxShadow='0 6px 24px rgba(108,99,255,0.5)'; this.style.transform='translateY(-1px)';}"
+        onmouseleave="if(!this.disabled){this.style.boxShadow='0 4px 16px rgba(108,99,255,0.35)'; this.style.transform='translateY(0)';}">
+        <svg id="start-spinner" class="spin hidden w-4 h-4" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="10" stroke="rgba(255,255,255,0.3)" stroke-width="3" />
+          <path d="M12 2a10 10 0 0 1 10 10" stroke="white" stroke-width="3" stroke-linecap="round" />
+        </svg>
+        <span id="start-btn-label">Start Polling</span>
+      </button>
+    </section>
+
+    <!-- ─────────────── STATUS BANNER ─────────────── -->
+    <div id="status-banner" class="hidden fade-in rounded-2xl p-4 mb-4"
+      style="background:#1a1a24; border:1px solid #2a2a38; box-shadow:0 4px 24px rgba(0,0,0,0.4);">
+      <div class="flex items-start gap-3">
+        <div id="status-badge" class="flex-shrink-0 text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wide">
+        </div>
+        <div class="flex-1 min-w-0">
+          <p id="match-title" class="font-semibold text-sm truncate" style="color:#f1f5f9;"></p>
+          <p id="league-name" class="text-xs mt-0.5" style="color:#94a3b8;"></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── ODDS CARD ─────────────── -->
+    <section id="odds-card" class="hidden fade-in rounded-2xl p-5 mb-4"
+      style="background:#1a1a24; border:1px solid #2a2a38; box-shadow:0 4px 24px rgba(0,0,0,0.4);">
+
+      <!-- Card header: bookmaker + market -->
+      <div class="flex items-center justify-between mb-1">
+        <div>
+          <span id="bm-name" class="text-xs font-semibold uppercase tracking-wider" style="color:#6c63ff;"></span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="market-name" class="text-xs px-2 py-0.5 rounded-full font-semibold"
+            style="background:rgba(108,99,255,0.12); color:#a78bfa; border:1px solid rgba(108,99,255,0.2);"></span>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <p id="updated-at" class="text-xs" style="color:#94a3b8;"></p>
+      </div>
+
+      <!-- Column headers (updated dynamically with team initials) -->
+      <div class="grid grid-cols-3 gap-2 mb-1">
+        <div id="col-home" class="text-center text-xs font-semibold uppercase tracking-wider py-1.5 rounded-lg"
+          style="background:rgba(108,99,255,0.08); color:#a78bfa;">HOME</div>
+        <div id="col-draw" class="text-center text-xs font-semibold uppercase tracking-wider py-1.5 rounded-lg"
+          style="background:rgba(108,99,255,0.08); color:#a78bfa;">DRAW</div>
+        <div id="col-away" class="text-center text-xs font-semibold uppercase tracking-wider py-1.5 rounded-lg"
+          style="background:rgba(108,99,255,0.08); color:#a78bfa;">AWAY</div>
+      </div>
+
+      <!-- Favourite indicator row -->
+      <div class="grid grid-cols-3 gap-2 mb-2">
+        <div id="fav-home" class="text-center text-xs py-0.5 rounded-lg font-bold tracking-wide" style="min-height:18px;"></div>
+        <div id="fav-draw" class="text-center text-xs py-0.5 rounded-lg font-bold tracking-wide" style="min-height:18px;"></div>
+        <div id="fav-away" class="text-center text-xs py-0.5 rounded-lg font-bold tracking-wide" style="min-height:18px;"></div>
+      </div>
+
+      <!-- Back Odds row -->
+      <div class="mb-1">
+        <p class="text-xs font-medium mb-1.5" style="color:#94a3b8; letter-spacing:0.05em;">BACK</p>
+        <div class="grid grid-cols-3 gap-2">
+          <div id="back-home" class="text-center py-2.5 rounded-xl text-xl font-extrabold transition-colors"
+            style="background:rgba(34,197,94,0.06); color:#f1f5f9; border:1px solid rgba(34,197,94,0.1);">—</div>
+          <div id="back-draw" class="text-center py-2.5 rounded-xl text-xl font-extrabold transition-colors"
+            style="background:rgba(34,197,94,0.06); color:#f1f5f9; border:1px solid rgba(34,197,94,0.1);">—</div>
+          <div id="back-away" class="text-center py-2.5 rounded-xl text-xl font-extrabold transition-colors"
+            style="background:rgba(34,197,94,0.06); color:#f1f5f9; border:1px solid rgba(34,197,94,0.1);">—</div>
+        </div>
+      </div>
+
+      <!-- Lay Odds row -->
+      <div class="mb-1">
+        <p class="text-xs font-medium mb-1.5" style="color:#94a3b8; letter-spacing:0.05em;">LAY</p>
+        <div class="grid grid-cols-3 gap-2">
+          <div id="lay-home" class="text-center py-2 rounded-xl text-base font-semibold transition-colors"
+            style="background:rgba(245,158,11,0.06); color:#94a3b8; border:1px solid rgba(245,158,11,0.1);">—</div>
+          <div id="lay-draw" class="text-center py-2 rounded-xl text-base font-semibold transition-colors"
+            style="background:rgba(245,158,11,0.06); color:#94a3b8; border:1px solid rgba(245,158,11,0.1);">—</div>
+          <div id="lay-away" class="text-center py-2 rounded-xl text-base font-semibold transition-colors"
+            style="background:rgba(245,158,11,0.06); color:#94a3b8; border:1px solid rgba(245,158,11,0.1);">—</div>
+        </div>
+      </div>
+
+      <!-- Depth (Back) row -->
+      <div class="mb-1">
+        <p class="text-xs font-medium mb-1.5" style="color:#94a3b8; letter-spacing:0.05em;">DEPTH BACK</p>
+        <div class="grid grid-cols-3 gap-2">
+          <div id="depth-home" class="text-center py-1.5 rounded-xl text-xs font-medium transition-colors"
+            style="background:rgba(148,163,184,0.04); color:#64748b; border:1px solid rgba(148,163,184,0.08);">—</div>
+          <div id="depth-draw" class="text-center py-1.5 rounded-xl text-xs font-medium transition-colors"
+            style="background:rgba(148,163,184,0.04); color:#64748b; border:1px solid rgba(148,163,184,0.08);">—</div>
+          <div id="depth-away" class="text-center py-1.5 rounded-xl text-xs font-medium transition-colors"
+            style="background:rgba(148,163,184,0.04); color:#64748b; border:1px solid rgba(148,163,184,0.08);">—</div>
+        </div>
+      </div>
+
+      <!-- Depth (Lay) row -->
+      <div>
+        <p class="text-xs font-medium mb-1.5" style="color:#94a3b8; letter-spacing:0.05em;">DEPTH LAY</p>
+        <div class="grid grid-cols-3 gap-2">
+          <div id="depth-lay-home" class="text-center py-1.5 rounded-xl text-xs font-medium transition-colors"
+            style="background:rgba(245,158,11,0.04); color:#64748b; border:1px solid rgba(245,158,11,0.08);">—</div>
+          <div id="depth-lay-draw" class="text-center py-1.5 rounded-xl text-xs font-medium transition-colors"
+            style="background:rgba(245,158,11,0.04); color:#64748b; border:1px solid rgba(245,158,11,0.08);">—</div>
+          <div id="depth-lay-away" class="text-center py-1.5 rounded-xl text-xs font-medium transition-colors"
+            style="background:rgba(245,158,11,0.04); color:#64748b; border:1px solid rgba(245,158,11,0.08);">—</div>
+        </div>
+      </div>
+
+      <!-- Last updated timestamp -->
+      <div class="mt-4 pt-3 flex items-center justify-between" style="border-top:1px solid #2a2a38;">
+        <span class="text-xs" style="color:#64748b;">Last updated</span>
+        <span id="last-updated-label" class="text-xs font-medium" style="color:#94a3b8;">—</span>
+      </div>
+    </section>
+
+    <!-- ─────────────── POLLING CONTROLS ─────────────── -->
+
+    <!-- Stop Polling button (LIVE state) -->
+    <div id="stop-btn-wrap" class="hidden mb-4 fade-in">
+      <button id="stop-btn" type="button"
+        class="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all duration-300 active:scale-95"
+        style="background:rgba(239,68,68,0.12); color:#ef4444; border:1px solid rgba(239,68,68,0.25);"
+        onmouseenter="this.style.background='rgba(239,68,68,0.2)'; this.style.borderColor='rgba(239,68,68,0.4)'"
+        onmouseleave="this.style.background='rgba(239,68,68,0.12)'; this.style.borderColor='rgba(239,68,68,0.25)'">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="#ef4444">
+          <rect x="6" y="6" width="12" height="12" rx="2" />
+        </svg>
+        Stop Polling
+      </button>
+    </div>
+
+    <!-- Non-live warning banner -->
+    <div id="non-live-banner" class="hidden fade-in rounded-2xl p-4 mb-4 flex items-center justify-between gap-3"
+      style="background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.2);">
+      <div class="flex items-center gap-2">
+        <span style="font-size:1.1rem;">⚠️</span>
+        <div>
+          <p class="text-sm font-semibold" style="color:#f59e0b;">Match is not live</p>
+          <p class="text-xs mt-0.5" style="color:#94a3b8;">Polling paused until live</p>
+        </div>
+      </div>
+      <button id="retry-btn" type="button"
+        class="flex-shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 active:scale-90"
+        style="background:rgba(245,158,11,0.15); color:#f59e0b; border:1px solid rgba(245,158,11,0.3);"
+        onmouseenter="this.style.background='rgba(245,158,11,0.25)'"
+        onmouseleave="this.style.background='rgba(245,158,11,0.15)'">
+        Retry
+      </button>
+    </div>
+
+    <!-- Poll interval indicator (LIVE state) -->
+    <div id="poll-indicator" class="hidden fade-in flex items-center justify-center gap-2 mb-4">
+      <div class="flex gap-1">
+        <span class="poll-dot"></span>
+        <span class="poll-dot"></span>
+      </div>
+      <span class="text-xs font-medium" style="color:#6c63ff;">Polling every 1s...</span>
+    </div>
+
+    <!-- Wake Lock indicator -->
+    <div id="wake-lock-indicator" class="hidden fade-in flex items-center justify-center gap-1.5 mb-4">
+      <span style="font-size:0.85rem;">🔒</span>
+      <span class="text-xs" style="color:#94a3b8;">Screen awake</span>
+    </div>
+
+    <!-- Background pause sticky banner -->
+    <div id="bg-pause-banner" class="hidden rounded-2xl p-4 mb-4"
+      style="background:rgba(148,163,184,0.08); border:1px solid rgba(148,163,184,0.15);">
+      <div class="flex items-center gap-2">
+        <span style="font-size:1rem;">⏸</span>
+        <p class="text-sm font-medium" style="color:#94a3b8;">Polling paused — app in background</p>
+      </div>
+    </div>
+
+    <!-- Connection lost banner -->
+    <div id="conn-lost-banner" class="hidden rounded-2xl p-4 mb-4"
+      style="background:rgba(239,68,68,0.08); border:1px solid rgba(239,68,68,0.2);">
+      <div class="flex items-center gap-2">
+        <span style="font-size:1rem;">⚠️</span>
+        <p id="conn-lost-text" class="text-sm font-medium" style="color:#ef4444;">Connection lost. Retrying in 5s...</p>
+      </div>
+    </div>
+
+  </div><!-- /wrapper -->
+
+  <!-- ─────────────── TOAST CONTAINER ─────────────── -->
+  <div id="toast-container"
+    class="fixed bottom-6 left-0 right-0 flex flex-col items-center gap-2 z-50 pointer-events-none px-4">
+  </div>
+
+  <!-- ═══════════════════════════ JAVASCRIPT ═══════════════════════════ -->
+  <script>
+    /* ─────────── STATE ─────────── */
+    const STATE = {
+      IDLE: 'IDLE',
+      LOADING: 'LOADING',
+      NOT_LIVE: 'NOT_LIVE',
+      LIVE_POLLING: 'LIVE_POLLING',
+      PAUSED_BACKGROUND: 'PAUSED_BACKGROUND',
+      STOPPED: 'STOPPED',
+    };
+
+    let currentState = STATE.IDLE;
+    let pollingInterval = null;
+    let wakeLockSentinel = null;
+    let userManuallyStopped = false;
+    let isPollingActive = false;
+    let matchIsLive = false;
+    let consecutiveErrors = 0;
+    let lastUpdatedAt = null;
+    let lastUpdatedTimer = null;
+    let reconnectTimeout = null;
+    let currentApiUrl = '';
+
+    /* Previous odds for flash detection */
+    const prevVals = {};
+
+    /* ─────────── DOM REFS ─────────── */
+    const $ = id => document.getElementById(id);
+    const eventIdInput = $('event-id');
+    const apiKeyInput = $('api-key');
+    const startBtn = $('start-btn');
+    const startBtnLabel = $('start-btn-label');
+    const startSpinner = $('start-spinner');
+    const toggleKeyBtn = $('toggle-key');
+    const eyeIcon = $('eye-icon');
+    const eyeOffIcon = $('eye-off-icon');
+    const apiError = $('api-error');
+    const statusBanner = $('status-banner');
+    const statusBadge = $('status-badge');
+    const matchTitle = $('match-title');
+    const leagueName = $('league-name');
+    const oddsCard = $('odds-card');
+    const bmName = $('bm-name');
+    const marketName = $('market-name');
+
+    const updatedAt = $('updated-at');
+    const stopBtnWrap = $('stop-btn-wrap');
+    const stopBtn = $('stop-btn');
+    const nonLiveBanner = $('non-live-banner');
+    const retryBtn = $('retry-btn');
+    const pollIndicator = $('poll-indicator');
+    const wakeLockInd = $('wake-lock-indicator');
+    const bgPauseBanner = $('bg-pause-banner');
+    const connLostBanner = $('conn-lost-banner');
+    const connLostText = $('conn-lost-text');
+    const headerLivePill = $('header-live-pill');
+    const toastContainer = $('toast-container');
+    const lastUpdatedLabel = $('last-updated-label');
+    const backHome = $('back-home'), backDraw = $('back-draw'), backAway = $('back-away');
+    const layHome = $('lay-home'), layDraw = $('lay-draw'), layAway = $('lay-away');
+    const depHome = $('depth-home'), depDraw = $('depth-draw'), depAway = $('depth-away');
+    const depLayHome = $('depth-lay-home'), depLayDraw = $('depth-lay-draw'), depLayAway = $('depth-lay-away');
+    const colHome = $('col-home'), colDraw = $('col-draw'), colAway = $('col-away');
+    const favHome = $('fav-home'), favDraw = $('fav-draw'), favAway = $('fav-away');
+
+    /* ─────────── HELPERS ─────────── */
+
+    function show(el) { el.classList.remove('hidden'); }
+    function hide(el) { el.classList.add('hidden'); }
+    function showFlex(el) { el.classList.remove('hidden'); el.classList.add('flex'); }
+
+    function collapseInputCard() {
+      const card = $('input-card');
+      card.style.transition = 'max-height 350ms ease, opacity 300ms ease, margin 300ms ease, padding 300ms ease';
+      card.style.overflow = 'hidden';
+      card.style.maxHeight = card.scrollHeight + 'px';
+      void card.offsetHeight; // force reflow
+      card.style.maxHeight = '0';
+      card.style.opacity = '0';
+      card.style.marginBottom = '0';
+      card.style.paddingTop = '0';
+      card.style.paddingBottom = '0';
+    }
+
+    function expandInputCard() {
+      const card = $('input-card');
+      card.style.transition = 'max-height 350ms ease, opacity 300ms ease, margin 300ms ease, padding 300ms ease';
+      card.style.overflow = 'hidden';
+      card.style.maxHeight = '600px';
+      card.style.opacity = '1';
+      card.style.marginBottom = '';
+      card.style.paddingTop = '';
+      card.style.paddingBottom = '';
+      setTimeout(() => { card.style.overflow = 'visible'; }, 360);
+    }
+
+    function setInputsDisabled(disabled) {
+      eventIdInput.disabled = disabled;
+      apiKeyInput.disabled = disabled;
+      eventIdInput.style.opacity = disabled ? '0.5' : '1';
+      apiKeyInput.style.opacity = disabled ? '0.5' : '1';
+    }
+
+    /* ─────────── TOAST ─────────── */
+
+    function showToast(msg, duration = 3000, persistent = false) {
+      const t = document.createElement('div');
+      t.textContent = msg;
+      t.className = 'toast-enter rounded-xl px-4 py-3 text-sm font-medium pointer-events-auto text-center';
+      t.style.cssText = `
+      background: #1a1a24;
+      border: 1px solid #2a2a38;
+      color: #f1f5f9;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      max-width: 320px;
+    `;
+      toastContainer.appendChild(t);
+      if (!persistent) {
+        setTimeout(() => {
+          t.style.transition = 'opacity 300ms';
+          t.style.opacity = '0';
+          setTimeout(() => t.remove(), 300);
+        }, duration);
+      }
+      return t;
+    }
+
+    /* ─────────── HIGHLIGHT CHANGE ─────────── */
+
+    function highlightChange(el, key, newVal) {
+      const formatted = (newVal !== null && newVal !== undefined) ? String(newVal) : '—';
+      if (prevVals[key] !== undefined && prevVals[key] !== formatted) {
+        el.classList.remove('flash');
+        void el.offsetWidth; // reflow
+        el.classList.add('flash');
+      }
+      prevVals[key] = formatted;
+      el.textContent = formatted;
+    }
+
+    /* ─────────── LAST UPDATED COUNTER ─────────── */
+
+    function startLastUpdatedCounter() {
+      if (lastUpdatedTimer) clearInterval(lastUpdatedTimer);
+      lastUpdatedTimer = setInterval(() => {
+        if (!lastUpdatedAt) return;
+        const secs = Math.round((Date.now() - lastUpdatedAt) / 1000);
+        if (secs < 5) lastUpdatedLabel.textContent = 'Just now';
+        else if (secs < 60) lastUpdatedLabel.textContent = `${secs} seconds ago`;
+        else lastUpdatedLabel.textContent = `${Math.floor(secs / 60)}m ${secs % 60}s ago`;
+      }, 1000);
+    }
+
+    /* ─────────── STATUS BADGE ─────────── */
+
+    function renderStatusBadge(status) {
+      const s = status.toLowerCase();
+      statusBadge.textContent = status.toUpperCase();
+      if (s === 'live') {
+        statusBadge.className = 'badge-live flex-shrink-0 text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wide';
+        statusBadge.style.cssText = 'background:rgba(34,197,94,0.15); color:#22c55e; border:1px solid rgba(34,197,94,0.3);';
+        showFlex(headerLivePill);
+      } else {
+        statusBadge.className = 'flex-shrink-0 text-xs font-bold px-2.5 py-1 rounded-full uppercase tracking-wide';
+        if (s === 'completed' || s === 'finished') {
+          statusBadge.style.cssText = 'background:rgba(148,163,184,0.12); color:#94a3b8; border:1px solid rgba(148,163,184,0.2);';
+        } else {
+          statusBadge.style.cssText = 'background:rgba(245,158,11,0.12); color:#f59e0b; border:1px solid rgba(245,158,11,0.25);';
+        }
+        hide(headerLivePill);
+      }
+    }
+
+    /* ─────────── HELPERS: INITIALS + FAVOURITE ─────────── */
+
+    function getInitials(name) {
+      if (!name) return '?';
+      return name.trim().split(/\s+/).map(w => w[0].toUpperCase()).join('');
+    }
+
+    function updateFavourite(homeOdd, drawOdd, awayOdd) {
+      const cells = [
+        { el: favHome, val: homeOdd },
+        { el: favDraw, val: drawOdd },
+        { el: favAway, val: awayOdd },
+      ];
+      // Clear all
+      cells.forEach(c => { c.el.textContent = ''; c.el.style.cssText = 'min-height:18px;'; });
+      // Find minimum valid numeric value
+      const nums = cells.map(c => ({ el: c.el, v: parseFloat(c.val) })).filter(c => !isNaN(c.v));
+      if (!nums.length) return;
+      const minVal = Math.min(...nums.map(c => c.v));
+      nums.filter(c => c.v === minVal).forEach(c => {
+        c.el.textContent = '⭐ FAV';
+        c.el.style.cssText = 'min-height:18px; background:rgba(34,197,94,0.12); color:#22c55e; border-radius:6px; padding:1px 0;';
+      });
+    }
+
+    /* ─────────── RENDER ODDS ─────────── */
+
+    function renderOdds(data) {
+      const bm = data.bookmakers?.['Betfair Exchange'];
+      if (!bm || !bm.length) return;
+
+      const market = bm[0];
+      const odds = market.odds?.[0];
+
+      bmName.textContent = 'Betfair Exchange';
+      marketName.textContent = market.name || 'ML';
+
+      // Update column headers with team initials
+      const homeInit = getInitials(data.home);
+      const awayInit = getInitials(data.away);
+      colHome.innerHTML = `<span style="font-size:0.8em;opacity:0.7;">HOME</span><br><span style="font-size:1.1em;letter-spacing:0.04em;">${homeInit}</span>`;
+      colDraw.textContent = 'DRAW';
+      colAway.innerHTML = `<span style="font-size:0.8em;opacity:0.7;">AWAY</span><br><span style="font-size:1.1em;letter-spacing:0.04em;">${awayInit}</span>`;
+
+      if (odds) {
+        highlightChange(backHome, 'backHome', odds.home ?? '—');
+        highlightChange(backDraw, 'backDraw', odds.draw ?? '—');
+        highlightChange(backAway, 'backAway', odds.away ?? '—');
+        highlightChange(layHome, 'layHome', odds.layHome ?? '—');
+        highlightChange(layDraw, 'layDraw', odds.layDraw ?? '—');
+        highlightChange(layAway, 'layAway', odds.layAway ?? '—');
+        highlightChange(depHome, 'depHome', odds.depthHome ?? '—');
+        highlightChange(depDraw, 'depDraw', odds.depthDraw ?? '—');
+        highlightChange(depAway, 'depAway', odds.depthAway ?? '—');
+        highlightChange(depLayHome, 'depLayHome', odds.depthLayHome ?? '—');
+        highlightChange(depLayDraw, 'depLayDraw', odds.depthLayDraw ?? '—');
+        highlightChange(depLayAway, 'depLayAway', odds.depthLayAway ?? '—');
+
+        // Update favourite indicator
+        updateFavourite(odds.home, odds.draw, odds.away);
+      }
+
+      // updatedAt display
+      if (market.updatedAt) {
+        try {
+          const d = new Date(market.updatedAt);
+          updatedAt.textContent = `API timestamp: ${d.toLocaleTimeString()}`;
+        } catch { updatedAt.textContent = market.updatedAt; }
+      }
+
+      lastUpdatedAt = Date.now();
+      show(oddsCard);
+      startLastUpdatedCounter();
+    }
+
+    /* ─────────── RENDER RESPONSE ─────────── */
+
+    function renderResponse(data) {
+      const status = (data.status || '').toLowerCase();
+      matchTitle.textContent = `${data.home || '?'} vs ${data.away || '?'}`;
+      leagueName.textContent = [data.league?.name, data.sport?.name].filter(Boolean).join(' · ');
+      renderStatusBadge(data.status || '');
+      show(statusBanner);
+      renderOdds(data);
+    }
+
+    /* ─────────── TRANSITION TO STATE ─────────── */
+
+    function transitionTo(newState) {
+      currentState = newState;
+
+      /* Reset everything first */
+      hide(stopBtnWrap);
+      hide(nonLiveBanner);
+      hide(pollIndicator);
+      hide(wakeLockInd);
+      hide(bgPauseBanner);
+      hide(connLostBanner);
+      startBtn.disabled = false;
+      startBtn.style.opacity = '1';
+      hide(startSpinner);
+      startBtnLabel.textContent = 'Start Polling';
+
+      switch (newState) {
+        case STATE.IDLE:
+          isPollingActive = false;
+          setInputsDisabled(false);
+          expandInputCard();
+          hide(statusBanner);
+          hide(oddsCard);
+          hide(headerLivePill);
+          break;
+
+        case STATE.LOADING:
+          isPollingActive = false;
+          setInputsDisabled(true);
+          expandInputCard();
+          startBtn.disabled = true;
+          startBtn.style.opacity = '0.7';
+          show(startSpinner);
+          startBtnLabel.textContent = 'Connecting...';
+          break;
+
+        case STATE.NOT_LIVE:
+          isPollingActive = false;
+          setInputsDisabled(true);
+          expandInputCard();
+          show(nonLiveBanner);
+          break;
+
+        case STATE.LIVE_POLLING:
+          isPollingActive = true;
+          setInputsDisabled(true);
+          collapseInputCard();
+          showFlex(stopBtnWrap);
+          show(pollIndicator);
+          show(wakeLockInd);
+          break;
+
+        case STATE.PAUSED_BACKGROUND:
+          isPollingActive = true; // conceptually still active
+          show(bgPauseBanner);
+          hide(pollIndicator);
+          hide(wakeLockInd);
+          break;
+
+        case STATE.STOPPED:
+          isPollingActive = false;
+          setInputsDisabled(false);
+          expandInputCard();
+          hide(headerLivePill);
+          matchIsLive = false;
+          break;
+      }
+    }
+
+    /* ─────────── WAKE LOCK ─────────── */
+
+    async function requestWakeLock() {
+      if (!('wakeLock' in navigator)) return;
+      try {
+        wakeLockSentinel = await navigator.wakeLock.request('screen');
+        wakeLockSentinel.addEventListener('release', () => { wakeLockSentinel = null; });
+      } catch (e) { /* silently ignore */ }
+    }
+
+    async function releaseWakeLock() {
+      if (wakeLockSentinel) {
+        try { await wakeLockSentinel.release(); } catch { }
+        wakeLockSentinel = null;
+      }
+    }
+
+    /* ─────────── POLLING CONTROL ─────────── */
+
+    function startPolling() {
+      if (pollingInterval) clearInterval(pollingInterval);
+      pollingInterval = setInterval(fetchOdds, 1000);
+    }
+
+    function stopPollingInterval() {
+      if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+    }
+
+    /* ─────────── FETCH ODDS ─────────── */
+
+    async function fetchOdds() {
+      const apiKey = apiKeyInput.value.trim();
+      const eventId = eventIdInput.value.trim();
+      if (!apiKey || !eventId) return;
+
+      currentApiUrl = `https://api.odds-api.io/v3/odds?apiKey=${encodeURIComponent(apiKey)}&eventId=${encodeURIComponent(eventId)}&bookmakers=Betfair Exchange`;
+
+      try {
+        const res = await fetch(currentApiUrl);
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        const data = await res.json();
+
+        /* Success — reset error counter */
+        consecutiveErrors = 0;
+        hide(apiError);
+        hide(connLostBanner);
+
+        const status = (data.status || '').toLowerCase();
+        matchIsLive = status === 'live';
+
+        renderResponse(data);
+
+        /* State transitions based on status */
+        if (currentState === STATE.LOADING) {
+          if (matchIsLive) {
+            transitionTo(STATE.LIVE_POLLING);
+            startPolling();
+            await requestWakeLock();
+          } else {
+            transitionTo(STATE.NOT_LIVE);
+          }
+          return;
+        }
+
+        /* Already polling — re-check status */
+        if (currentState === STATE.LIVE_POLLING && !matchIsLive) {
+          stopPollingInterval();
+          await releaseWakeLock();
+          transitionTo(STATE.NOT_LIVE);
+        }
+
+      } catch (err) {
+        consecutiveErrors++;
+
+        const msg = err.message || 'Unknown error';
+        apiError.textContent = `⚠ ${msg}`;
+        show(apiError);
+
+        /* If still loading → go back to idle */
+        if (currentState === STATE.LOADING) {
+          transitionTo(STATE.IDLE);
+          return;
+        }
+
+        /* 3 consecutive errors while live polling */
+        if (consecutiveErrors >= 3 && currentState === STATE.LIVE_POLLING) {
+          stopPollingInterval();
+          await releaseWakeLock();
+          hide(pollIndicator);
+          hide(wakeLockInd);
+          show(connLostBanner);
+          connLostText.textContent = '⚠️ Connection lost. Retrying in 5s...';
+
+          if (reconnectTimeout) clearTimeout(reconnectTimeout);
+          reconnectTimeout = setTimeout(async () => {
+            try {
+              const r = await fetch(currentApiUrl);
+              if (!r.ok) throw new Error(`HTTP ${r.status}`);
+              const d = await r.json();
+              consecutiveErrors = 0;
+              hide(connLostBanner);
+              renderResponse(d);
+              const s = (d.status || '').toLowerCase();
+              matchIsLive = s === 'live';
+              if (matchIsLive && !userManuallyStopped) {
+                transitionTo(STATE.LIVE_POLLING);
+                startPolling();
+                await requestWakeLock();
+                const toast = showToast('✅ Reconnected', 3000);
+              }
+            } catch { /* stay in error state */ }
+          }, 5000);
+        }
+      }
+    }
+
+    /* ─────────── PAGE VISIBILITY ─────────── */
+
+    document.addEventListener('visibilitychange', async () => {
+      if (document.hidden) {
+        if (isPollingActive && currentState === STATE.LIVE_POLLING) {
+          stopPollingInterval();
+          await releaseWakeLock();
+          transitionTo(STATE.PAUSED_BACKGROUND);
+        }
+      } else {
+        if (isPollingActive && !userManuallyStopped && currentState === STATE.PAUSED_BACKGROUND) {
+          hide(bgPauseBanner);
+          await fetchOdds();
+          if (matchIsLive) {
+            transitionTo(STATE.LIVE_POLLING);
+            startPolling();
+            await requestWakeLock();
+            showToast('▶ Polling resumed', 3000);
+          }
+        }
+      }
+    });
+
+    /* ─────────── TOGGLE PASSWORD VISIBILITY ─────────── */
+
+    toggleKeyBtn.addEventListener('click', () => {
+      if (apiKeyInput.type === 'password') {
+        apiKeyInput.type = 'text';
+        eyeIcon.classList.add('hidden');
+        eyeOffIcon.classList.remove('hidden');
+      } else {
+        apiKeyInput.type = 'password';
+        eyeIcon.classList.remove('hidden');
+        eyeOffIcon.classList.add('hidden');
+      }
+    });
+
+    /* ─────────── START POLLING ─────────── */
+
+    startBtn.addEventListener('click', async () => {
+      const apiKey = apiKeyInput.value.trim();
+      const eventId = eventIdInput.value.trim();
+
+      /* Validate */
+      if (!eventId) {
+        apiError.textContent = '⚠ Please enter an Event ID.';
+        show(apiError);
+        eventIdInput.focus();
+        return;
+      }
+      if (!apiKey) {
+        apiError.textContent = '⚠ Please enter your API Key.';
+        show(apiError);
+        apiKeyInput.focus();
+        return;
+      }
+
+      hide(apiError);
+      userManuallyStopped = false;
+      consecutiveErrors = 0;
+      matchIsLive = false;
+      Object.keys(prevVals).forEach(k => delete prevVals[k]);
+
+      transitionTo(STATE.LOADING);
+      await fetchOdds();
+    });
+
+    /* ─────────── STOP POLLING ─────────── */
+
+    stopBtn.addEventListener('click', async () => {
+      stopPollingInterval();
+      await releaseWakeLock();
+      userManuallyStopped = true;
+      isPollingActive = false;
+      matchIsLive = false;
+      transitionTo(STATE.STOPPED);
+      showToast('Polling stopped by user.', 3000);
+    });
+
+    /* ─────────── RETRY (not-live) ─────────── */
+
+    retryBtn.addEventListener('click', async () => {
+      hide(apiError);
+      transitionTo(STATE.LOADING);
+      await fetchOdds();
+    });
+
+
+
+    /* ─────────── ENTER KEY SUBMIT ─────────── */
+
+    [eventIdInput, apiKeyInput].forEach(el => {
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !startBtn.disabled) startBtn.click();
+      });
+    });
+
+    /* ─────────── INIT ─────────── */
+    transitionTo(STATE.IDLE);
+  </script>
+</body>
+
+</html>
