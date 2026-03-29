@@ -335,9 +335,12 @@
 
       <!-- Favourite indicator row -->
       <div class="grid grid-cols-3 gap-2 mb-2">
-        <div id="fav-home" class="text-center text-xs py-0.5 rounded-lg font-bold tracking-wide" style="min-height:18px;"></div>
-        <div id="fav-draw" class="text-center text-xs py-0.5 rounded-lg font-bold tracking-wide" style="min-height:18px;"></div>
-        <div id="fav-away" class="text-center text-xs py-0.5 rounded-lg font-bold tracking-wide" style="min-height:18px;"></div>
+        <div id="fav-home" class="text-center text-xs py-0.5 rounded-lg font-bold tracking-wide"
+          style="min-height:18px;"></div>
+        <div id="fav-draw" class="text-center text-xs py-0.5 rounded-lg font-bold tracking-wide"
+          style="min-height:18px;"></div>
+        <div id="fav-away" class="text-center text-xs py-0.5 rounded-lg font-bold tracking-wide"
+          style="min-height:18px;"></div>
       </div>
 
       <!-- Back Odds row -->
@@ -825,7 +828,7 @@
 
     function startPolling() {
       if (pollingInterval) clearInterval(pollingInterval);
-      pollingInterval = setInterval(fetchOdds, 1000);
+      pollingInterval = setInterval(fetchOdds, 2500);
     }
 
     function stopPollingInterval() {
